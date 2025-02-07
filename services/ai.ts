@@ -65,11 +65,11 @@ export async function generateAIResponse(userMessage: string): Promise<string> {
     
     return cleanResponse;
 
-  } catch (error) {
+  } catch (error: any) {
     console.error('Error details:', {
-      name: error.name,
-      message: error.message,
-      stack: error.stack
+      name: error?.name,
+      message: error?.message,
+      stack: error?.stack
     });
     return "I'm having trouble connecting right now. Please try again in a moment.";
   }
