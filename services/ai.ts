@@ -1,4 +1,4 @@
-const DEEPSEEK_API_URL = 'https://api.deepseek.ai/v1/chat/completions';
+const DEEPSEEK_API_URL = 'http://deepseek-r1.highstreet.world:3000/api/generate';
 const DEEPSEEK_API_KEY = process.env.EXPO_PUBLIC_DEEPSEEK_API_KEY;
 
 interface DeepSeekMessage {
@@ -20,26 +20,57 @@ interface DeepSeekResponse {
 
 export async function generateAIResponse(userMessage: string): Promise<string> {
   try {
-    // Simulate network delay
-    await new Promise(resolve => setTimeout(resolve, 500));
+    console.log('Sending request to DeepSeek...');
+
+    const systemPrompt = `
+      Provide a concise response (maximum 400 words). 
+      If the topic requires more detail, end your response with:
+      "Would you like me to explain this in more detail?"
+      Focus on the most important points first.
+    `;
+
+    const requestBody = {
+      model: "deepseek-r1:32b",
+      prompt: `${systemPrompt}\n\nUser: ${userMessage}`,
+      stream: false
+    };
+
+    console.log('Request body:', JSON.stringify(requestBody, null, 2));
+
+    const response = await fetch(DEEPSEEK_API_URL, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify(requestBody)
+    });
+
+    if (!response.ok) {
+      const errorText = await response.text();
+      console.error('API error response:', errorText);
+      throw new Error(`API error: ${response.status}`);
+    }
+
+    const data = await response.json();
+    console.log('Raw API response:', data);
     
-    // Generate contextual responses based on user message
-    if (userMessage.toLowerCase().includes('hello') || userMessage.toLowerCase().includes('hi')) {
-      return "Hello! How can I assist you today?";
+    // Clean up the response
+    let cleanResponse = data.response || data.generated_text || '';
+    cleanResponse = cleanResponse.replace(/<think>.*?<\/think>/gs, '').trim();
+    
+    if (!cleanResponse) {
+      console.error('Empty response after cleanup');
+      return "I'm not sure how to respond to that.";
     }
     
-    if (userMessage.includes('?')) {
-      return "That's an interesting question. Let me help you with that...";
-    }
-    
-    if (userMessage.length < 10) {
-      return "Could you please elaborate a bit more?";
-    }
-    
-    return `I understand your message about "${userMessage}". How can I help you further?`;
-    
+    return cleanResponse;
+
   } catch (error) {
-    console.error('Error generating response:', error);
-    return "I'm here to help, but I'm having a bit of trouble right now. Could you try again?";
+    console.error('Error details:', {
+      name: error.name,
+      message: error.message,
+      stack: error.stack
+    });
+    return "I'm having trouble connecting right now. Please try again in a moment.";
   }
 }
