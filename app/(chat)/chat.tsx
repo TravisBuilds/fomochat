@@ -30,14 +30,16 @@ export default function ChatScreen() {
         </View>
         <View style={styles.headerRight} />
       </View>
-      <FlatList
-        data={messages}
-        renderItem={renderMessage}
-        keyExtractor={(item) => item.id}
-        contentContainerStyle={styles.messageList}
-        inverted={false}
-      />
-      <ChatInput onSend={sendMessage} loading={loading} />
+      <View style={styles.chatContainer}>
+        <FlatList
+          data={messages}
+          renderItem={renderMessage}
+          keyExtractor={(item) => item.id}
+          contentContainerStyle={styles.messageList}
+          inverted={false}
+        />
+        <ChatInput onSend={sendMessage} loading={loading} />
+      </View>
     </SafeAreaView>
   );
 }
@@ -45,7 +47,7 @@ export default function ChatScreen() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#2B3784',  // Start color of gradient
+    backgroundColor: Colors.background,
   },
   header: {
     flexDirection: 'row',
@@ -62,6 +64,10 @@ const styles = StyleSheet.create({
   },
   headerRight: {
     width: 40,  // To balance the header
+  },
+  chatContainer: {
+    flex: 1,
+    marginTop: 0, // Remove top margin
   },
   messageList: {
     padding: 16,
