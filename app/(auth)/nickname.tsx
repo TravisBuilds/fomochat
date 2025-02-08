@@ -1,60 +1,68 @@
-import { View, StyleSheet } from 'react-native';
-import { TextInput, Button } from 'react-native-paper';
-import { useRouter } from 'expo-router';
+import { View, Text, TextInput, TouchableOpacity, StyleSheet } from 'react-native';
 import { useState } from 'react';
+import { router } from 'expo-router';
 import { Colors } from '../../constants/Colors';
-import { supabase } from '../../services/supabase';
+import type { Character } from '../../services/ai';
 
 export default function NicknameScreen() {
-  const router = useRouter();
   const [nickname, setNickname] = useState('');
-  const [isLoading, setIsLoading] = useState(false);
+  const [selectedCharacter, setSelectedCharacter] = useState<Character>('etienne');
 
-  const handleContinue = async () => {
+  const handleContinue = () => {
     if (nickname.trim()) {
-      setIsLoading(true);
-      try {
-        // Insert nickname into Supabase
-        const { error } = await supabase
-          .from('nicknames')
-          .insert([{ nickname: nickname.trim() }]);
-
-        if (error) {
-          console.error('Error saving nickname:', error);
-          return;
+      router.push({ 
+        pathname: '/chat',
+        params: { 
+          nickname: nickname.trim(),
+          character: selectedCharacter
         }
-
-        // Pass nickname to chat screen
-        router.push({
-          pathname: '/(chat)/chat',
-          params: { nickname: nickname.trim() }
-        });
-      } catch (err) {
-        console.error('Failed to save nickname:', err);
-      } finally {
-        setIsLoading(false);
-      }
+      });
     }
   };
 
   return (
     <View style={styles.container}>
+      <Text style={styles.title}>Choose Your Bartender</Text>
+      
+      <View style={styles.characterSelection}>
+        <TouchableOpacity 
+          style={[
+            styles.characterButton,
+            selectedCharacter === 'etienne' && styles.selectedCharacter
+          ]}
+          onPress={() => setSelectedCharacter('etienne')}
+        >
+          <Text style={styles.characterName}>Étienne</Text>
+          <Text style={styles.characterDesc}>Champagne Specialist</Text>
+        </TouchableOpacity>
+
+        <TouchableOpacity 
+          style={[
+            styles.characterButton,
+            selectedCharacter === 'oliver' && styles.selectedCharacter
+          ]}
+          onPress={() => setSelectedCharacter('oliver')}
+        >
+          <Text style={styles.characterName}>Oliver</Text>
+          <Text style={styles.characterDesc}>Master Mixologist</Text>
+        </TouchableOpacity>
+      </View>
+
       <TextInput
-        label="Enter your nickname"
+        style={styles.input}
+        placeholder="Enter your nickname"
         value={nickname}
         onChangeText={setNickname}
-        style={styles.input}
-        mode="outlined"
+        placeholderTextColor="#666"
       />
-      <Button 
-        mode="contained" 
+
+      <TouchableOpacity 
+        style={[styles.button, !nickname.trim() && styles.buttonDisabled]}
         onPress={handleContinue}
-        style={styles.button}
-        disabled={!nickname.trim() || isLoading}
-        loading={isLoading}
+        disabled={!nickname.trim()}
       >
-        Continue
-      </Button>
+        <Text style={styles.buttonText}>Continue</Text>
+      </TouchableOpacity>
     </View>
   );
 }
@@ -62,14 +70,64 @@ export default function NicknameScreen() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: Colors.background,
     padding: 20,
+    backgroundColor: Colors.background,
     justifyContent: 'center',
   },
+  title: {
+    fontSize: 24,
+    color: Colors.text,
+    textAlign: 'center',
+    marginBottom: 30,
+  },
+  characterSelection: {
+    flexDirection: 'row',
+    justifyContent: 'space-around',
+    marginBottom: 30,
+  },
+  characterButton: {
+    padding: 15,
+    borderRadius: 10,
+    borderWidth: 2,
+    borderColor: Colors.primary,
+    alignItems: 'center',
+    width: '45%',
+  },
+  selectedCharacter: {
+    backgroundColor: Colors.primary,
+  },
+  characterName: {
+    fontSize: 18,
+    color: Colors.text,
+    fontWeight: 'bold',
+  },
+  characterDesc: {
+    fontSize: 14,
+    color: Colors.text,
+    opacity: 0.8,
+  },
   input: {
+    height: 50,
+    borderWidth: 1,
+    borderColor: Colors.primary,
+    borderRadius: 8,
+    paddingHorizontal: 15,
+    fontSize: 16,
+    color: Colors.text,
     marginBottom: 20,
   },
   button: {
-    marginTop: 10,
+    backgroundColor: Colors.primary,
+    padding: 15,
+    borderRadius: 8,
+    alignItems: 'center',
+  },
+  buttonDisabled: {
+    opacity: 0.5,
+  },
+  buttonText: {
+    color: Colors.text,
+    fontSize: 18,
+    fontWeight: 'bold',
   },
 }); 

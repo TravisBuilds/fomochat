@@ -1,41 +1,22 @@
+import { ETIENNE_CONTEXT } from './characters/etienne';
+import { OLIVER_CONTEXT } from './characters/oliver';
+
 const DEEPSEEK_API_URL = 'http://deepseek-r1.highstreet.world:3000/api/generate';
-const DEEPSEEK_API_KEY = process.env.EXPO_PUBLIC_DEEPSEEK_API_KEY;
 
-interface DeepSeekMessage {
-  role: 'user' | 'assistant';
-  content: string;
-}
+export type Character = 'etienne' | 'oliver';
 
-interface DeepSeekResponse {
-  id: string;
-  choices: Array<{
-    index: number;
-    message: {
-      role: string;
-      content: string;
-    };
-    finish_reason: string;
-  }>;
-}
-
-export async function generateAIResponse(userMessage: string): Promise<string> {
+export async function generateAIResponse(userMessage: string, character: Character = 'etienne'): Promise<string> {
   try {
-    console.log('Sending request to DeepSeek...');
+    console.log(`Sending request to DeepSeek for ${character}...`);
 
-    const systemPrompt = `
-      Provide a concise response (maximum 400 words). 
-      If the topic requires more detail, end your response with:
-      "Would you like me to explain this in more detail?"
-      Focus on the most important points first.
-    `;
+    const context = character === 'etienne' ? ETIENNE_CONTEXT : OLIVER_CONTEXT;
+    const characterName = character === 'etienne' ? 'Étienne' : 'Oliver';
 
     const requestBody = {
       model: "deepseek-r1:32b",
-      prompt: `${systemPrompt}\n\nUser: ${userMessage}`,
+      prompt: `${context}\n\nGuest: ${userMessage}\n\n${characterName}:`,
       stream: false
     };
-
-    console.log('Request body:', JSON.stringify(requestBody, null, 2));
 
     const response = await fetch(DEEPSEEK_API_URL, {
       method: 'POST',
@@ -46,24 +27,14 @@ export async function generateAIResponse(userMessage: string): Promise<string> {
     });
 
     if (!response.ok) {
-      const errorText = await response.text();
-      console.error('API error response:', errorText);
       throw new Error(`API error: ${response.status}`);
     }
 
     const data = await response.json();
-    console.log('Raw API response:', data);
-    
-    // Clean up the response
     let cleanResponse = data.response || data.generated_text || '';
     cleanResponse = cleanResponse.replace(/<think>.*?<\/think>/gs, '').trim();
     
-    if (!cleanResponse) {
-      console.error('Empty response after cleanup');
-      return "I'm not sure how to respond to that.";
-    }
-    
-    return cleanResponse;
+    return cleanResponse || getDefaultResponse(character);
 
   } catch (error: any) {
     console.error('Error details:', {
@@ -71,6 +42,18 @@ export async function generateAIResponse(userMessage: string): Promise<string> {
       message: error?.message,
       stack: error?.stack
     });
-    return "I'm having trouble connecting right now. Please try again in a moment.";
+    return getErrorResponse(character);
   }
+}
+
+function getDefaultResponse(character: Character): string {
+  return character === 'etienne'
+    ? 'Étienne appears distracted by a bottle on the shelf...'
+    : 'Oliver smirks while polishing a glass...';
+}
+
+function getErrorResponse(character: Character): string {
+  return character === 'etienne'
+    ? "Étienne appears distracted by a bottle on the shelf..."
+    : "Oliver raises an eyebrow while mixing something mysterious...";
 }

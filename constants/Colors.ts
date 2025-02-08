@@ -1,5 +1,7 @@
 export const Colors = {
   primary: '#4B5EAA',
+  secondary: '#E2E8F0',
+  secondaryText: '#1A202C',
   background: 'linear-gradient(180deg, #2B3784 0%, #2B5E84 100%)',
   text: '#2C2C2C',
   textSecondary: '#666666',

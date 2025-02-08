@@ -1,4 +1,4 @@
-import { View, StyleSheet, FlatList, SafeAreaView } from 'react-native';
+import { View, StyleSheet, FlatList, SafeAreaView, GestureResponderEvent } from 'react-native';
 import { IconButton } from 'react-native-paper';
 import { Colors } from '../../constants/Colors';
 import { ChatBubble } from '../../components/chat/ChatBubble';
@@ -6,11 +6,27 @@ import { ChatInput } from '../../components/chat/ChatInput';
 import { useChat } from '../../hooks/useChat';
 import { Message } from '../../types';
 import { useLocalSearchParams, useRouter } from 'expo-router';
+import type { Character } from '../../services/ai';
+import { useState } from 'react';
+import { GestureDetector, Gesture, Directions } from 'react-native-gesture-handler';
 
 export default function ChatScreen() {
   const router = useRouter();
-  const { nickname = '' } = useLocalSearchParams<{ nickname: string }>();
-  const { messages, loading, sendMessage } = useChat('test-chat-id', nickname);
+  const { nickname = '', character: initialCharacter = 'etienne' } = 
+    useLocalSearchParams<{ nickname: string, character: Character }>();
+  
+  const [currentCharacter, setCurrentCharacter] = useState<Character>(initialCharacter);
+  
+  const { messages, loading, sendMessage } = useChat('test-chat-id', nickname, currentCharacter);
+
+  const swipeGesture = Gesture.Pan()
+    .onEnd((event) => {
+      if (event.translationX > 50) {  // Swipe right
+        setCurrentCharacter('etienne');
+      } else if (event.translationX < -50) {  // Swipe left
+        setCurrentCharacter('oliver'); 
+      }
+    });
 
   const renderMessage = ({ item }: { item: Message }) => (
     <ChatBubble message={item} isOwnMessage={item.user_nickname === nickname} />
@@ -30,16 +46,17 @@ export default function ChatScreen() {
         </View>
         <View style={styles.headerRight} />
       </View>
-      <View style={styles.chatContainer}>
-        <FlatList
-          data={messages}
-          renderItem={renderMessage}
-          keyExtractor={(item) => item.id}
-          contentContainerStyle={styles.messageList}
-          inverted={false}
-        />
-        <ChatInput onSend={sendMessage} loading={loading} />
-      </View>
+      <GestureDetector gesture={swipeGesture}>
+        <View style={styles.chatContainer}>
+          <FlatList
+            data={messages}
+            renderItem={renderMessage}
+            keyExtractor={(item) => item.id}
+            contentContainerStyle={styles.messageList}
+          />
+          <ChatInput onSend={sendMessage} loading={loading} />
+        </View>
+      </GestureDetector>
     </SafeAreaView>
   );
 }

@@ -1,10 +1,9 @@
-import { useEffect, useState } from 'react';
-import { supabase } from '../services/supabase';
+import { useState, useEffect, useCallback } from 'react';
+import { generateAIResponse, Character } from '../services/ai';
 import { Message } from '../types';
-import * as Crypto from 'expo-crypto';
-import { generateAIResponse } from '../services/ai';
+import { supabase } from '../services/supabase';
 
-export function useChat(chatId: string, userNickname: string) {
+export function useChat(chatId: string, nickname: string, character: Character) {
   const [messages, setMessages] = useState<Message[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -18,60 +17,67 @@ export function useChat(chatId: string, userNickname: string) {
     if (error) console.error('Query error:', error);
   };
 
-  const sendMessage = async (content: string) => {
-    setLoading(true);
-    try {
-      // Send user message
-      const newMessage = {
-        chat_id: `${chatId}_${userNickname}`,
-        user_nickname: userNickname,
-        content: content,
-        created_at: new Date().toISOString(),
-      };
-
-      const { data: userData, error: userError } = await supabase
-        .from('messages')
-        .insert([newMessage])
-        .select()
-        .single();
-
-      if (userError) {
-        console.error('Error sending message:', userError);
-        return;
-      }
-
-      // Update local state with user message
-      setMessages(current => [...current, userData as Message]);
-
-      // Generate and send AI response
-      const aiResponse = await generateAIResponse(content);
-      const aiMessage = {
-        chat_id: `${chatId}_${userNickname}`,
-        user_nickname: 'AI Assistant',
-        content: aiResponse,
-        created_at: new Date().toISOString(),
-      };
-
-      const { data: aiData, error: aiError } = await supabase
-        .from('messages')
-        .insert([aiMessage])
-        .select()
-        .single();
-
-      if (aiError) {
-        console.error('Error sending AI response:', aiError);
-        return;
-      }
-
-      // Update local state with AI response
-      setMessages(current => [...current, aiData as Message]);
+  // Add initial greeting when character changes
+  useEffect(() => {
+    const greeting = character === 'etienne' 
+      ? "Ah, welcome to Elixir! I'm Étienne. Shall we find you the perfect champagne?"
+      : "Welcome to The Blind Duke. Oliver Hawthorne at your service. What's your poison?";
       
-    } catch (err) {
-      console.error('Failed to send message:', err);
+    const initialMessage: Message = {
+      id: Date.now().toString(),
+      content: greeting,
+      user_nickname: character,
+      timestamp: new Date().toISOString(),
+      chat_id: chatId
+    };
+
+    setMessages([initialMessage]);
+  }, [character, chatId]);
+
+  const sendMessage = useCallback(async (text: string) => {
+    try {
+      setLoading(true);
+
+      // Add user message
+      const userMessage: Message = {
+        id: Date.now().toString(),
+        content: text.trim(),
+        user_nickname: nickname,
+        timestamp: new Date().toISOString(),
+        chat_id: chatId
+      };
+
+      setMessages(prev => [...prev, userMessage]);
+
+      // Store in Supabase
+      const { error } = await supabase
+        .from('messages')
+        .insert([{
+          content: text.trim(),
+          user_nickname: nickname,
+          chat_id: chatId
+        }]);
+
+      if (error) throw error;
+
+      // Get AI response
+      const aiResponse = await generateAIResponse(text, character);
+      const aiMessage: Message = {
+        id: (Date.now() + 1).toString(),
+        content: aiResponse,
+        user_nickname: character,
+        timestamp: new Date().toISOString(),
+        chat_id: chatId
+      };
+
+      setMessages(prev => [...prev, aiMessage]);
+
+    } catch (error) {
+      console.error('Error in sendMessage:', error);
     } finally {
       setLoading(false);
     }
-  };
+  }, [nickname, character, chatId]);
 
   useEffect(() => {
     // Initial messages load with nickname-specific chat_id
@@ -79,7 +85,7 @@ export function useChat(chatId: string, userNickname: string) {
       const { data, error } = await supabase
         .from('messages')
         .select('*')
-        .eq('chat_id', `${chatId}_${userNickname}`)
+        .eq('chat_id', `${chatId}_${nickname}`)
         .order('created_at', { ascending: true });
 
       if (error) {
@@ -99,7 +105,7 @@ export function useChat(chatId: string, userNickname: string) {
         event: 'INSERT',
         schema: 'public',
         table: 'messages',
-        filter: `chat_id=eq.${chatId}_${userNickname}`
+        filter: `chat_id=eq.${chatId}_${nickname}`
       }, (payload) => {
         setMessages(current => [...current, payload.new as Message]);
       })
@@ -108,7 +114,7 @@ export function useChat(chatId: string, userNickname: string) {
     return () => {
       supabase.removeChannel(channel);
     };
-  }, [chatId, userNickname]);
+  }, [chatId, nickname]);
 
   return { messages, loading, sendMessage, error, checkMessages };
 }
