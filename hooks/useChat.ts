@@ -17,51 +17,39 @@ export function useChat(chatId: string, nickname: string, character: Character) 
     if (error) console.error('Query error:', error);
   };
 
-  // Load existing messages
+  // Load messages or initialize with greeting when character changes
   useEffect(() => {
     const loadMessages = async () => {
-      const { data, error } = await supabase
+      console.log('Loading messages for character:', character);
+      setMessages([]); // Clear existing messages first
+      
+      // Get greeting based on character
+      const greeting = character === 'etienne' 
+        ? "Ah, welcome to Elixir! I'm Étienne. Shall we find you the perfect champagne?"
+        : "Welcome to The Blind Duke. Oliver Hawthorne at your service. What's your poison?";
+        
+      const initialMessage: Message = {
+        id: Date.now().toString(),
+        content: greeting,
+        user_nickname: character,
+        timestamp: new Date().toISOString(),
+        chat_id: `${chatId}_${nickname}`
+      };
+
+      setMessages([initialMessage]);
+      
+      // Store greeting
+      await supabase
         .from('messages')
-        .select('*')
-        .eq('chat_id', `${chatId}_${nickname}`)
-        .order('created_at', { ascending: true });
-
-      if (error) {
-        console.error('Error loading messages:', error);
-        return;
-      }
-
-      if (!data || data.length === 0) {
-        // If no messages exist, add greeting
-        const greeting = character === 'etienne' 
-          ? "Ah, welcome to Elixir! I'm Étienne. Shall we find you the perfect champagne?"
-          : "Welcome to The Blind Duke. Oliver Hawthorne at your service. What's your poison?";
-          
-        const initialMessage: Message = {
-          id: Date.now().toString(),
+        .insert([{
           content: greeting,
           user_nickname: character,
-          timestamp: new Date().toISOString(),
           chat_id: `${chatId}_${nickname}`
-        };
-
-        setMessages([initialMessage]);
-        
-        // Store greeting
-        await supabase
-          .from('messages')
-          .insert([{
-            content: greeting,
-            user_nickname: character,
-            chat_id: `${chatId}_${nickname}`
-          }]);
-      } else {
-        setMessages(data);
-      }
+        }]);
     };
 
     loadMessages();
-  }, [character, chatId, nickname]);
+  }, [character, chatId, nickname]); // Trigger on character change
 
   const sendMessage = useCallback(async (text: string) => {
     try {
@@ -73,7 +61,7 @@ export function useChat(chatId: string, nickname: string, character: Character) 
         content: text.trim(),
         user_nickname: nickname,
         timestamp: new Date().toISOString(),
-        chat_id: chatId
+        chat_id: `${chatId}_${nickname}`
       };
 
       setMessages(prev => [...prev, userMessage]);
@@ -84,7 +72,7 @@ export function useChat(chatId: string, nickname: string, character: Character) 
         .insert([{
           content: text.trim(),
           user_nickname: nickname,
-          chat_id: chatId
+          chat_id: `${chatId}_${nickname}`
         }]);
 
       if (error) throw error;
@@ -96,7 +84,7 @@ export function useChat(chatId: string, nickname: string, character: Character) 
         content: aiResponse,
         user_nickname: character,
         timestamp: new Date().toISOString(),
-        chat_id: chatId
+        chat_id: `${chatId}_${nickname}`
       };
 
       setMessages(prev => [...prev, aiMessage]);

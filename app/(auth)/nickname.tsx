@@ -10,11 +10,11 @@ export default function NicknameScreen() {
 
   const handleContinue = () => {
     if (nickname.trim()) {
-      router.push({ 
-        pathname: '/chat',
+      router.push({
+        pathname: '/(chat)/chat',
         params: { 
           nickname: nickname.trim(),
-          character: selectedCharacter
+          character: 'etienne'
         }
       });
     }

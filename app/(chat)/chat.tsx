@@ -1,5 +1,5 @@
-import { View, StyleSheet, FlatList, SafeAreaView, GestureResponderEvent } from 'react-native';
-import { IconButton } from 'react-native-paper';
+import { View, StyleSheet, FlatList, SafeAreaView } from 'react-native';
+import { IconButton, Text } from 'react-native-paper';
 import { Colors } from '../../constants/Colors';
 import { ChatBubble } from '../../components/chat/ChatBubble';
 import { ChatInput } from '../../components/chat/ChatInput';
@@ -7,26 +7,38 @@ import { useChat } from '../../hooks/useChat';
 import { Message } from '../../types';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import type { Character } from '../../services/ai';
-import { useState } from 'react';
-import { GestureDetector, Gesture, Directions } from 'react-native-gesture-handler';
+import { useState, useCallback } from 'react';
+import { GestureDetector, Gesture } from 'react-native-gesture-handler';
 
 export default function ChatScreen() {
   const router = useRouter();
-  const { nickname = '', character: initialCharacter = 'etienne' } = 
+  const { nickname = '', character = 'etienne' } = 
     useLocalSearchParams<{ nickname: string, character: Character }>();
   
-  const [currentCharacter, setCurrentCharacter] = useState<Character>(initialCharacter);
+  const [currentCharacter, setCurrentCharacter] = useState<Character>(character);
   
   const { messages, loading, sendMessage } = useChat('test-chat-id', nickname, currentCharacter);
 
+  const handleCharacterSwitch = useCallback((direction: 'left' | 'right') => {
+    console.log('Switching character:', direction);
+    setCurrentCharacter(prev => {
+      const next = direction === 'right' ? 'etienne' : 'oliver';
+      console.log('New character:', next);
+      return next;
+    });
+  }, []);
+
   const swipeGesture = Gesture.Pan()
+    .activeOffsetX([-20, 20])
     .onEnd((event) => {
-      if (event.translationX > 50) {  // Swipe right
-        setCurrentCharacter('etienne');
-      } else if (event.translationX < -50) {  // Swipe left
-        setCurrentCharacter('oliver'); 
+      if (event.translationX > 50) {
+        handleCharacterSwitch('right');
+      } else if (event.translationX < -50) {
+        handleCharacterSwitch('left');
       }
     });
+
+  console.log('Current character:', currentCharacter);
 
   const renderMessage = ({ item }: { item: Message }) => (
     <ChatBubble message={item} isOwnMessage={item.user_nickname === nickname} />
@@ -42,7 +54,9 @@ export default function ChatScreen() {
           onPress={() => router.back()}
         />
         <View style={styles.avatarContainer}>
-          {/* Add your Fomo avatar here */}
+          <Text style={styles.characterName}>
+            {currentCharacter === 'etienne' ? 'Etienne' : 'Oliver'}
+          </Text>
         </View>
         <View style={styles.headerRight} />
       </View>
@@ -73,18 +87,18 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
   },
   avatarContainer: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
-    backgroundColor: Colors.white,
-    // Add your Fomo avatar styling
+    alignItems: 'center',
+  },
+  characterName: {
+    color: Colors.white,
+    fontSize: 18,
+    fontWeight: '600',
   },
   headerRight: {
-    width: 40,  // To balance the header
+    width: 40,
   },
   chatContainer: {
     flex: 1,
-    marginTop: 0, // Remove top margin
   },
   messageList: {
     padding: 16,
