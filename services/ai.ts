@@ -5,7 +5,7 @@ const DEEPSEEK_API_URL = 'http://deepseek-r1.highstreet.world:3000/api/generate'
 
 export type Character = 'etienne' | 'oliver';
 
-export async function generateAIResponse(userMessage: string, character: Character = 'etienne'): Promise<string> {
+export async function generateAIResponse(userMessage: string, character: Character): Promise<string> {
   try {
     console.log(`Sending request to DeepSeek for ${character}...`);
 
@@ -14,8 +14,10 @@ export async function generateAIResponse(userMessage: string, character: Charact
 
     const requestBody = {
       model: "deepseek-r1:32b",
-      prompt: `${context}\n\nGuest: ${userMessage}\n\n${characterName}:`,
-      stream: false
+      prompt: `${context}\n\nGuest: ${userMessage}\n\n${characterName}: `,
+      stream: false,
+      temperature: 0.7,
+      max_tokens: 150
     };
 
     const response = await fetch(DEEPSEEK_API_URL, {

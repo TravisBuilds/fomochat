@@ -17,22 +17,51 @@ export function useChat(chatId: string, nickname: string, character: Character) 
     if (error) console.error('Query error:', error);
   };
 
-  // Add initial greeting when character changes
+  // Load existing messages
   useEffect(() => {
-    const greeting = character === 'etienne' 
-      ? "Ah, welcome to Elixir! I'm Étienne. Shall we find you the perfect champagne?"
-      : "Welcome to The Blind Duke. Oliver Hawthorne at your service. What's your poison?";
-      
-    const initialMessage: Message = {
-      id: Date.now().toString(),
-      content: greeting,
-      user_nickname: character,
-      timestamp: new Date().toISOString(),
-      chat_id: chatId
+    const loadMessages = async () => {
+      const { data, error } = await supabase
+        .from('messages')
+        .select('*')
+        .eq('chat_id', `${chatId}_${nickname}`)
+        .order('created_at', { ascending: true });
+
+      if (error) {
+        console.error('Error loading messages:', error);
+        return;
+      }
+
+      if (!data || data.length === 0) {
+        // If no messages exist, add greeting
+        const greeting = character === 'etienne' 
+          ? "Ah, welcome to Elixir! I'm Étienne. Shall we find you the perfect champagne?"
+          : "Welcome to The Blind Duke. Oliver Hawthorne at your service. What's your poison?";
+          
+        const initialMessage: Message = {
+          id: Date.now().toString(),
+          content: greeting,
+          user_nickname: character,
+          timestamp: new Date().toISOString(),
+          chat_id: `${chatId}_${nickname}`
+        };
+
+        setMessages([initialMessage]);
+        
+        // Store greeting
+        await supabase
+          .from('messages')
+          .insert([{
+            content: greeting,
+            user_nickname: character,
+            chat_id: `${chatId}_${nickname}`
+          }]);
+      } else {
+        setMessages(data);
+      }
     };
 
-    setMessages([initialMessage]);
-  }, [character, chatId]);
+    loadMessages();
+  }, [character, chatId, nickname]);
 
   const sendMessage = useCallback(async (text: string) => {
     try {
@@ -80,24 +109,6 @@ export function useChat(chatId: string, nickname: string, character: Character) 
   }, [nickname, character, chatId]);
 
   useEffect(() => {
-    // Initial messages load with nickname-specific chat_id
-    const loadMessages = async () => {
-      const { data, error } = await supabase
-        .from('messages')
-        .select('*')
-        .eq('chat_id', `${chatId}_${nickname}`)
-        .order('created_at', { ascending: true });
-
-      if (error) {
-        console.error('Error loading messages:', error);
-        return;
-      }
-
-      setMessages(data || []);
-    };
-
-    loadMessages();
-
     // Subscribe to new messages for this specific chat
     const channel = supabase
       .channel('public:messages')

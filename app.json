@@ -9,7 +9,7 @@
     "userInterfaceStyle": "light",
     "newArchEnabled": true,
     "splash": {
-      "image": "./assets/your-splash-image.png",
+      "image": "./assets/splash.png",
       "resizeMode": "contain",
       "backgroundColor": "#ffffff"
     },
@@ -29,7 +29,6 @@
     },
     "plugins": [
       "expo-router"
-      
     ],
     "assets": [
       "./assets/fomo-mascot.png"
