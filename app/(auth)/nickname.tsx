@@ -14,7 +14,7 @@ export default function NicknameScreen() {
         pathname: '/(chat)/chat',
         params: { 
           nickname: nickname.trim(),
-          character: 'etienne'
+          character: selectedCharacter
         }
       });
     }

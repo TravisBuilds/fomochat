@@ -1,137 +1,167 @@
 import { useState, useEffect, useCallback } from 'react';
-import { generateAIResponse, Character } from '../services/ai';
-import { Message } from '../types';
+import { generateNPCResponse } from '../services/ai';
+import type { Message, SpeechPattern } from '../types';
 import { supabase } from '../services/supabase';
-import { getPersonality } from '../services/aiPersonality';
+import type { Character } from '../services/ai';
+
 
 export function useChat(chatId: string, nickname: string, character: Character) {
   const [messages, setMessages] = useState<Message[]>([]);
   const [loading, setLoading] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  //debug
-  const checkMessages = async () => {
-    const { data, error } = await supabase
-      .from('messages')
-      .select('*')
-      .eq('chat_id', chatId);
-    console.log('Stored messages:', data);
-    if (error) console.error('Query error:', error);
-  };
+  const [personality, setPersonality] = useState<any>(null);
+  const [tribeSpeech, setTribeSpeech] = useState<SpeechPattern | null>(null);
 
-  // Format messages for AI context
-  const formatConversationHistory = (messages: Message[]) => {
-    return messages.map(msg => ({
-      role: msg.user_nickname === nickname ? 'user' : 'assistant',
-      content: msg.content
-    })).slice(-10); // Keep last 10 messages for context
-  };
-
-  // Load messages or initialize with greeting when character changes
+  // Single effect to load personality and initial message
   useEffect(() => {
-    const loadMessages = async () => {
-      console.log('Loading messages for character:', character);
-      setMessages([]); // Clear existing messages first
-      
-      // Get personality
-      const personality = await getPersonality(character);
-      const greeting = personality?.greeting || "Welcome!";
-      
-      const initialMessage: Message = {
-        id: Date.now().toString(),
-        content: greeting,
-        user_nickname: character,
-        timestamp: new Date().toISOString(),
-        chat_id: `${chatId}_${nickname}`
-      };
+    let mounted = true;
+    
+    const initialize = async () => {
+      try {
+        console.log('Initializing chat with character:', character);
+        
+        // Get personality only once
+        const { data: personalityData, error: personalityError } = await supabase
+          .from('personalities')
+          .select('*')
+          .eq('id', character)
+          .single();
 
-      setMessages([initialMessage]);
-      
-      // Store greeting
-      await supabase
-        .from('messages')
-        .insert([{
-          content: greeting,
-          user_nickname: character,
-          chat_id: `${chatId}_${nickname}`
-        }]);
+        if (personalityError) throw personalityError;
+        if (!mounted) return;
+
+        setPersonality(personalityData);
+
+        // Get tribe speech if applicable
+        const tribeSpeechData = personalityData?.tribe ? 
+          await getTribeSpeech(personalityData.tribe) : null;
+        
+        if (!mounted) return;
+        setTribeSpeech(tribeSpeechData);
+
+        // Load existing messages or set initial greeting
+        const { data: existingMessages } = await supabase
+          .from('messages')
+          .select('*')
+          .eq('chat_id', `${chatId}_${nickname}`)
+          .order('created_at', { ascending: true });
+
+        if (!mounted) return;
+
+        if (existingMessages && existingMessages.length > 0) {
+          setMessages(existingMessages);
+        } else {
+          const greeting = personalityData?.greeting || "Welcome!";
+          const initialMessage: Message = {
+            id: Date.now().toString(),
+            content: greeting,
+            user_nickname: character,
+            created_at: new Date().toISOString(),
+            chat_id: `${chatId}_${nickname}`,
+            role: 'assistant'
+          };
+
+          const { data: savedGreeting } = await supabase
+            .from('messages')
+            .insert([initialMessage])
+            .select()
+            .single();
+
+          if (savedGreeting && mounted) {
+            setMessages([savedGreeting]);
+          }
+        }
+      } catch (error) {
+        console.error('Error initializing chat:', error);
+      }
     };
 
-    loadMessages();
-  }, [character, chatId, nickname]); // Trigger on character change
+    initialize();
+    return () => { mounted = false; };
+  }, [character, chatId, nickname]);
 
-  const sendMessage = useCallback(async (text: string) => {
+  const sendMessage = useCallback(async (content: string) => {
+    if (!personality) return;
+    
     try {
       setLoading(true);
 
-      // Add user message
+      // Create user message
       const userMessage: Message = {
-        id: Date.now().toString(),
-        content: text.trim(),
+        chat_id: `${chatId}_${nickname}`,
+        content,
         user_nickname: nickname,
-        timestamp: new Date().toISOString(),
-        chat_id: `${chatId}_${nickname}`
+        created_at: new Date().toISOString(),
+        role: 'user'
       };
 
-      setMessages(prev => [...prev, userMessage]);
-
-      // Store in Supabase
-      await supabase
+      // Save user message to database
+      const { data: savedMessage, error: saveError } = await supabase
         .from('messages')
-        .insert([{
-          content: text.trim(),
-          user_nickname: nickname,
-          chat_id: `${chatId}_${nickname}`
-        }]);
+        .insert([userMessage])
+        .select()
+        .single();
 
-      // Get conversation history for context
-      const conversationHistory = formatConversationHistory([...messages, userMessage]);
+      if (saveError) throw saveError;
 
-      // Get AI response with context
-      const aiResponse = await generateAIResponse(text, character, conversationHistory);
-      
+      setMessages(prev => [...prev, savedMessage]);
+
+      // Generate AI response using cached personality and tribeSpeech
+      const aiResponse = await generateNPCResponse(
+        messages,
+        personality,
+        tribeSpeech
+      );
+
+      // Create AI message
       const aiMessage: Message = {
-        id: (Date.now() + 1).toString(),
+        chat_id: `${chatId}_${nickname}`,
         content: aiResponse,
         user_nickname: character,
-        timestamp: new Date().toISOString(),
-        chat_id: `${chatId}_${nickname}`
+        created_at: new Date().toISOString(),
+        role: 'assistant'
       };
 
-      setMessages(prev => [...prev, aiMessage]);
-
-      await supabase
+      // Save AI message to database
+      const { data: savedAiMessage, error: aiSaveError } = await supabase
         .from('messages')
-        .insert([{
-          content: aiResponse,
-          user_nickname: character,
-          chat_id: `${chatId}_${nickname}`
-        }]);
+        .insert([aiMessage])
+        .select()
+        .single();
+
+      if (aiSaveError) throw aiSaveError;
+
+      setMessages(prev => [...prev, savedAiMessage]);
 
     } catch (error) {
-      console.error('Error in sendMessage:', error);
+      console.error('Error sending message:', error);
     } finally {
       setLoading(false);
     }
-  }, [messages, nickname, character, chatId]);
+  }, [chatId, nickname, character, messages, personality, tribeSpeech]);
 
-  useEffect(() => {
-    // Subscribe to new messages for this specific chat
-    const channel = supabase
-      .channel('public:messages')
-      .on('postgres_changes', {
-        event: 'INSERT',
-        schema: 'public',
-        table: 'messages',
-        filter: `chat_id=eq.${chatId}_${nickname}`
-      }, (payload) => {
-        setMessages(current => [...current, payload.new as Message]);
-      })
-      .subscribe();
+  return { messages, loading, sendMessage };
+}
 
-    return () => {
-      supabase.removeChannel(channel);
-    };
-  }, [chatId, nickname]);
-
-  return { messages, loading, sendMessage, error, checkMessages };
+// Helper function to get tribe speech
+async function getTribeSpeech(tribeId: number): Promise<SpeechPattern | null> {
+  try {
+    // Log the query attempt
+    console.log('Fetching tribe speech for tribe:', tribeId);
+    
+    const { data, error } = await supabase
+      .from('tribes')
+      .select('speech_patterns')  // Changed from 'Speech' to 'speech_patterns'
+      .eq('id', tribeId)
+      .single();
+    
+    if (error) {
+      console.error('Error fetching tribe speech:', error);
+      return null;
+    }
+    
+    return data?.speech_patterns;
+  } catch (error) {
+    console.error('Error in getTribeSpeech:', error);
+    return null;
+  }
 }
