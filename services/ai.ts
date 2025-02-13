@@ -9,9 +9,93 @@ const OPENAI_API_URL = 'https://api.openai.com/v1/chat/completions';
 const OPENAI_API_KEY = process.env.EXPO_PUBLIC_OPENAI_API_KEY;
 const CURRENT_PROVIDER = process.env.EXPO_PUBLIC_AI_PROVIDER as 'deepseek' | 'gpt4';
 
-// Rate limiting variables
-const requestTimers = new Map<string, number>();
-const MIN_REQUEST_INTERVAL = 3000; // 3 seconds between requests
+// Queue system
+interface QueueItem {
+  resolve: (value: string) => void;
+  reject: (error: any) => void;
+  systemPrompt: string;
+  messages: Message[];
+}
+
+class RequestQueue {
+  private queue: QueueItem[] = [];
+  private processing = false;
+  private lastRequestTime = 0;
+  private readonly MIN_REQUEST_INTERVAL = 20000; // 20 seconds between requests
+
+  async add(systemPrompt: string, messages: Message[]): Promise<string> {
+    return new Promise((resolve, reject) => {
+      this.queue.push({ resolve, reject, systemPrompt, messages });
+      this.processQueue();
+    });
+  }
+
+  private async processQueue() {
+    if (this.processing || this.queue.length === 0) return;
+
+    this.processing = true;
+    const now = Date.now();
+    const timeToWait = Math.max(0, this.MIN_REQUEST_INTERVAL - (now - this.lastRequestTime));
+
+    if (timeToWait > 0) {
+      await new Promise(resolve => setTimeout(resolve, timeToWait));
+    }
+
+    const item = this.queue.shift();
+    if (!item) {
+      this.processing = false;
+      return;
+    }
+
+    try {
+      const response = await this.makeRequest(item.systemPrompt, item.messages);
+      this.lastRequestTime = Date.now();
+      item.resolve(response);
+    } catch (error) {
+      item.reject(error);
+    } finally {
+      this.processing = false;
+      this.processQueue();
+    }
+  }
+
+  private async makeRequest(systemPrompt: string, messages: Message[]): Promise<string> {
+    const requestBody = {
+      model: "gpt-4",
+      messages: [
+        {
+          role: "system",
+          content: systemPrompt
+        },
+        {
+          role: "user",
+          content: messages[messages.length - 1]?.content || ''
+        }
+      ],
+      max_tokens: 150,
+      temperature: 0.7
+    };
+
+    const response = await fetch(OPENAI_API_URL, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${OPENAI_API_KEY}`
+      },
+      body: JSON.stringify(requestBody)
+    });
+
+    if (!response.ok) {
+      const errorData = await response.json();
+      throw new Error(`API error: ${response.status} - ${errorData.error?.message || 'Unknown error'}`);
+    }
+
+    const data = await response.json();
+    return data.choices[0]?.message?.content || "I apologize, but I'm having trouble responding right now.";
+  }
+}
+
+const requestQueue = new RequestQueue();
 
 if (!DEEPSEEK_API_URL) {
   throw new Error('Missing DEEPSEEK_API_URL environment variable');
@@ -119,8 +203,14 @@ export async function generateNPCResponse(
   tribeSpeech: SpeechPattern | null
 ): Promise<string> {
   try {
-    console.log('Generating response for message:', messages[messages.length - 1]?.content);
-    
+    console.log('Current AI Provider:', CURRENT_PROVIDER); // Debug log
+    console.log('Using personality:', personality); // Debug log
+
+    if (!personality?.base_prompt) {
+      console.error('Missing base_prompt in personality:', personality);
+      throw new Error('Invalid personality data');
+    }
+
     const systemPrompt = `${personality.base_prompt}
     ${tribeSpeech ? `
     Use these speech patterns:
@@ -136,13 +226,56 @@ export async function generateNPCResponse(
     if (CURRENT_PROVIDER === 'deepseek') {
       return await generateDeepSeekResponse(systemPrompt, messages);
     } else {
-      console.log('Using GPT-4 provider');
+      console.log('Using GPT-4 for response'); // Debug log
       return await generateGPT4Response(systemPrompt, messages);
     }
   } catch (error) {
     console.error('Network or API error:', error);
     return "I apologize, but I'm having trouble responding right now.";
   }
+}
+
+async function generateGPT4Response(systemPrompt: string, messages: Message[]): Promise<string> {
+  if (!OPENAI_API_KEY) {
+    console.error('Missing OpenAI API key');
+    throw new Error('Missing OpenAI API key');
+  }
+
+  const requestBody = {
+    model: "gpt-4",
+    messages: [
+      {
+        role: "system",
+        content: systemPrompt
+      },
+      {
+        role: "user",
+        content: messages[messages.length - 1]?.content || ''
+      }
+    ],
+    max_tokens: 150,
+    temperature: 0.7
+  };
+
+  console.log('Making GPT-4 request...'); // Debug log
+
+  const response = await fetch(OPENAI_API_URL, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'Authorization': `Bearer ${OPENAI_API_KEY}`
+    },
+    body: JSON.stringify(requestBody)
+  });
+
+  if (!response.ok) {
+    const errorData = await response.json();
+    console.error('OpenAI API error:', errorData);
+    throw new Error(`API error: ${response.status} - ${errorData.error?.message || 'Unknown error'}`);
+  }
+
+  const data = await response.json();
+  return data.choices[0]?.message?.content || "I apologize, but I'm having trouble responding right now.";
 }
 
 async function generateDeepSeekResponse(systemPrompt: string, messages: Message[]): Promise<string> {
@@ -168,69 +301,4 @@ async function generateDeepSeekResponse(systemPrompt: string, messages: Message[
 
   const data = await response.json();
   return data.response || "I apologize, but I'm having trouble responding right now.";
-}
-
-async function wait(ms: number) {
-  return new Promise(resolve => setTimeout(resolve, ms));
-}
-
-async function generateGPT4Response(systemPrompt: string, messages: Message[]): Promise<string> {
-  if (!OPENAI_API_KEY) {
-    throw new Error('Missing OpenAI API key');
-  }
-
-  const chatId = messages[0]?.chat_id;
-  const lastRequest = requestTimers.get(chatId);
-  const now = Date.now();
-
-  if (lastRequest && (now - lastRequest) < MIN_REQUEST_INTERVAL) {
-    await wait(MIN_REQUEST_INTERVAL - (now - lastRequest));
-  }
-
-  requestTimers.set(chatId, now);
-
-  const requestBody = {
-    model: "gpt-4",  // Changed from turbo preview to standard GPT-4
-    messages: [
-      {
-        role: "system",
-        content: systemPrompt
-      },
-      {
-        role: "user",
-        content: messages[messages.length - 1]?.content || ''
-      }
-    ],
-    max_tokens: 150,
-    temperature: 0.7
-  };
-
-  try {
-    const response = await fetch(OPENAI_API_URL, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${OPENAI_API_KEY}`
-      },
-      body: JSON.stringify(requestBody)
-    });
-
-    if (response.status === 429) {
-      console.error('Rate limit exceeded with OpenAI, waiting before retry...');
-      await wait(5000); // Wait 5 seconds before retry
-      return "I need a moment to process. Please send your message again.";
-    }
-
-    if (!response.ok) {
-      const errorData = await response.json();
-      console.error('OpenAI API error:', errorData);
-      throw new Error(`API error: ${response.status} - ${errorData.error?.message || 'Unknown error'}`);
-    }
-
-    const data = await response.json();
-    return data.choices[0]?.message?.content || "I apologize, but I'm having trouble responding right now.";
-  } catch (error) {
-    console.error('OpenAI API error:', error);
-    return "I apologize, but I'm having trouble responding right now. Please try again in a moment.";
-  }
 }

@@ -1,5 +1,5 @@
-import { View, StyleSheet, FlatList, SafeAreaView } from 'react-native';
-import { IconButton, Text } from 'react-native-paper';
+import { View, StyleSheet, FlatList, SafeAreaView, Platform, StatusBar } from 'react-native';
+import { IconButton } from 'react-native-paper';
 import { Colors } from '../../constants/Colors';
 import { ChatBubble } from '../../components/chat/ChatBubble';
 import { ChatInput } from '../../components/chat/ChatInput';
@@ -7,71 +7,103 @@ import { useChat } from '../../hooks/useChat';
 import { Message } from '../../types';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import type { Character } from '../../services/ai';
-import { useState, useCallback } from 'react';
-import { GestureDetector, Gesture } from 'react-native-gesture-handler';
+import { useState, useCallback, useRef, useEffect } from 'react';
+import { GestureDetector, Gesture, GestureHandlerRootView } from 'react-native-gesture-handler';
+import { Text } from 'react-native';
 
 export default function ChatScreen() {
   const router = useRouter();
-  const { nickname = '', character = 'etienne' } = 
-    useLocalSearchParams<{ nickname: string, character: Character }>();
+  const flatListRef = useRef<FlatList>(null);
+  const params = useLocalSearchParams<{ nickname: string, character: Character }>();
+  const nickname = params.nickname || '';
+  const character = params.character || 'etienne';
   
   const [currentCharacter, setCurrentCharacter] = useState<Character>(character);
   
-  const { messages, loading, sendMessage } = useChat('test-chat-id', nickname, currentCharacter);
+  // Create unique chat ID for each character
+  const chatId = `${currentCharacter}_${nickname}`;
+  const { messages, loading, sendMessage } = useChat(chatId, nickname, currentCharacter);
+
+  useEffect(() => {
+    setCurrentCharacter(character);
+  }, [character]);
 
   const handleCharacterSwitch = useCallback((direction: 'left' | 'right') => {
-    console.log('Switching character:', direction);
-    setCurrentCharacter(prev => {
-      const next = direction === 'right' ? 'etienne' : 'oliver';
-      console.log('New character:', next);
-      return next;
-    });
-  }, []);
+    console.log('🎯 handleCharacterSwitch called with direction:', direction);
+    const newCharacter: Character = direction === 'right' ? 'etienne' : 'oliver';
+    console.log('🔄 Switching to:', newCharacter);
+    setCurrentCharacter(newCharacter);
+    router.setParams({ character: newCharacter });
+  }, [router]);
 
-  const swipeGesture = Gesture.Pan()
-    .activeOffsetX([-20, 20])
-    .onEnd((event) => {
-      if (event.translationX > 50) {
-        handleCharacterSwitch('right');
-      } else if (event.translationX < -50) {
-        handleCharacterSwitch('left');
+  console.log('Component rendered'); // Debug render
+
+  const scrollToBottom = (animated = true) => {
+    setTimeout(() => {
+      if (flatListRef.current && messages.length > 0) {
+        flatListRef.current.scrollToEnd({ animated });
       }
-    });
+    }, 100);
+  };
 
-  console.log('Current character:', currentCharacter);
+  useEffect(() => {
+    scrollToBottom();
+  }, [messages]);
+
+  useEffect(() => {
+    scrollToBottom(false);
+  }, []);
 
   const renderMessage = ({ item }: { item: Message }) => (
     <ChatBubble message={item} isOwnMessage={item.user_nickname === nickname} />
   );
 
+  const swipeGesture = Gesture.Pan()
+    .runOnJS(true)
+    .activeOffsetX([-20, 20])
+    .onBegin(() => {
+      console.log('🟡 Touch detected');
+    })
+    .onStart(() => {
+      console.log('🟢 Swipe started');
+    })
+    .onTouchesDown(() => {
+      console.log('👇 Touches down');
+    })
+    .onEnd((event) => {
+      console.log('🔵 Swipe ended');
+      console.log('Translation X:', event.translationX);
+      
+      if (event.translationX > 50) {
+        console.log('➡️ Right swipe detected');
+        handleCharacterSwitch('right');
+      } else if (event.translationX < -50) {
+        console.log('⬅️ Left swipe detected');
+        handleCharacterSwitch('left');
+      }
+    });
+
   return (
-    <SafeAreaView style={styles.container}>
-      <View style={styles.header}>
-        <IconButton
-          icon="arrow-left"
-          iconColor={Colors.white}
-          size={24}
-          onPress={() => router.back()}
-        />
-        <View style={styles.avatarContainer}>
-          <Text style={styles.characterName}>
-            {currentCharacter === 'etienne' ? 'Etienne' : 'Oliver'}
-          </Text>
-        </View>
-        <View style={styles.headerRight} />
-      </View>
-      <GestureDetector gesture={swipeGesture}>
-        <View style={styles.chatContainer}>
-          <FlatList
-            data={messages}
-            renderItem={renderMessage}
-            keyExtractor={(item) => item.id}
-            contentContainerStyle={styles.messageList}
-          />
-          <ChatInput onSend={sendMessage} loading={loading} />
-        </View>
-      </GestureDetector>
-    </SafeAreaView>
+    <GestureHandlerRootView style={{ flex: 1 }}>
+      <SafeAreaView style={styles.container}>
+        <View style={styles.header} />
+        <GestureDetector gesture={swipeGesture}>
+          <View style={[styles.content, { backgroundColor: Colors.background }]}>
+            <Text>Current character: {currentCharacter}</Text>
+            <FlatList
+              ref={flatListRef}
+              data={messages}
+              renderItem={renderMessage}
+              keyExtractor={(item: Message) => (item.id || Date.now()).toString()}
+              contentContainerStyle={styles.messageList}
+              onContentSizeChange={() => scrollToBottom()}
+              onLayout={() => scrollToBottom(false)}
+            />
+            <ChatInput onSend={sendMessage} loading={loading} />
+          </View>
+        </GestureDetector>
+      </SafeAreaView>
+    </GestureHandlerRootView>
   );
 }
 
@@ -79,29 +111,18 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: Colors.background,
+    paddingTop: Platform.OS === 'android' ? StatusBar.currentHeight : 0,
   },
   header: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    padding: 16,
-    justifyContent: 'space-between',
+    height: Platform.OS === 'ios' ? 50 : 20,
+    backgroundColor: Colors.background,
   },
-  avatarContainer: {
-    alignItems: 'center',
-  },
-  characterName: {
-    color: Colors.white,
-    fontSize: 18,
-    fontWeight: '600',
-  },
-  headerRight: {
-    width: 40,
-  },
-  chatContainer: {
+  content: {
     flex: 1,
+    paddingTop: 10,
   },
   messageList: {
-    padding: 16,
-    flexGrow: 1,
+    padding: 10,
+    paddingBottom: 20,
   },
 });
