@@ -18,4 +18,12 @@ export interface SpeechPattern {
   Rude: string;
   Surprised: string;
   Accent: string;
+}
+
+export interface Personality {
+  id: any;
+  base_prompt: string;
+  greeting: string;
+  Location: string;     // New column
+  Picture: string;   // New column
 } 

@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback } from 'react';
 import { generateNPCResponse } from '../services/ai';
-import type { Message, SpeechPattern } from '../types';
+import type { Message, Personality, SpeechPattern } from '../types';
 import { supabase } from '../services/supabase';
 import type { Character } from '../services/ai';
 
